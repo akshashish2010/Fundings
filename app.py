@@ -37,29 +37,30 @@ def fetch_funding_data():
 
         for item in data:
             symbol = item.get("symbol", "")
-            if item.get("contract_type") == "perpetual_futures":
-                # Delta API returns funding_rate in decimal (e.g. -0.018093 = -1.8093%)
+            contract_type = item.get("contract_type", "")
+
+            # Delta exchange par perpetual contracts ko filter karne ke liye
+            if "perpetual" in contract_type:
                 raw_rate = float(item.get("funding_rate", 0) or 0)
                 rate_pct = raw_rate * 100
-
                 price = float(item.get("mark_price", 0) or 0)
 
-                # Fetch interval: converts seconds or hours to standard 8, 4, 1
-                interval = item.get("funding_interval_hours") or item.get(
-                    "funding_interval"
+                # Funding interval check (seconds ya hours)
+                interval = item.get("funding_interval") or item.get(
+                    "funding_interval_hours"
                 )
-                if interval == 28800 or interval == 8:
-                    hours = 8
-                elif interval == 14400 or interval == 4:
+                if interval in [14400, 4]:
                     hours = 4
-                elif interval == 3600 or interval == 1:
+                elif interval in [3600, 1]:
                     hours = 1
                 else:
-                    hours = 8  # default fallback
+                    hours = 8  # default 8 hours
 
-                rate_8h = f"{rate_pct:.4f}%" if hours == 8 else "-"
-                rate_4h = f"{rate_pct:.4f}%" if hours == 4 else "-"
-                rate_1h = f"{rate_pct:.4f}%" if hours == 1 else "-"
+                # Single column formatting with interval suffix
+                if hours == 8:
+                    funding_str = f"{rate_pct:.4f}%"
+                else:
+                    funding_str = f"{rate_pct:.4f}% / {hours}h"
 
                 tv_url = f"https://www.tradingview.com/chart/?symbol=DELTA:{symbol}"
 
@@ -67,9 +68,7 @@ def fetch_funding_data():
                     {
                         "Coin Symbol": symbol,
                         "Price ($)": f"${price:,.4f}",
-                        "Funding (8h)": rate_8h,
-                        "Funding (4h)": rate_4h,
-                        "Funding (1h)": rate_1h,
+                        "Funding Rate": funding_str,
                         "Chart": tv_url,
                         "raw_rate": rate_pct,
                     }
@@ -77,7 +76,7 @@ def fetch_funding_data():
 
         df = pd.DataFrame(parsed_data)
         if not df.empty:
-            # Sort by most negative funding rate first (matching Delta screen)
+            # Sabse negative funding rate sabse upar aayegi (Delta ki tarah)
             df = df.sort_values(by="raw_rate", ascending=True)
         return df
     return pd.DataFrame()
@@ -101,9 +100,7 @@ if not df.empty:
         column_config={
             "Coin Symbol": st.column_config.TextColumn("Coin Symbol"),
             "Price ($)": st.column_config.TextColumn("Price ($)"),
-            "Funding (8h)": st.column_config.TextColumn("Funding (8h)"),
-            "Funding (4h)": st.column_config.TextColumn("Funding (4h)"),
-            "Funding (1h)": st.column_config.TextColumn("Funding (1h)"),
+            "Funding Rate": st.column_config.TextColumn("Funding Rate"),
             "Chart": st.column_config.LinkColumn(
                 "TradingView Chart",
                 help="Click to open chart",
@@ -116,3 +113,4 @@ if not df.empty:
     )
 else:
     st.error("Data load nahi ho paya. Kripya refresh karein.")
+    
