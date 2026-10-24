@@ -2,135 +2,107 @@ import pandas as pd
 import requests
 import streamlit as st
 
-# मोबाइल-फ्रेंडली पेज कॉन्फ़िगरेशन
-st.set_page_config(
-    page_title="Delta Funding Tracker", page_icon="⚡", layout="wide"
-)
+st.set_page_config(page_title="Delta Funding Rates", layout="wide")
 
-# Custom CSS - मोबाइल UI को क्लीन और सुंदर बनाने के लिए
 st.markdown(
     """
     <style>
-    .stApp { padding: 10px; }
-    .metric-card {
-        background-color: #1e1e1e;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 10px;
+    th {
+        font-size: 16px !important;
+        font-weight: 800 !important;
+        color: #1E293B !important;
+    }
+    td {
+        font-size: 15px !important;
+        font-weight: 600 !important;
     }
     </style>
 """,
     unsafe_allow_html=True,
 )
 
-st.title("⚡ Delta Live Funding Rates")
+st.title("⚡ Delta Exchange Funding Rates")
+
+if st.button("🔄 Refresh Data"):
+    st.rerun()
 
 
-# डेल्टा एक्सचेंज के पब्लिक API से डेटा लाना (बिना किसी Key/Login के)
-@st.cache_data(ttl=15)  # हर 15 सेकंड में ऑटो-रिफ्रेश/कैश अपडेट
-def get_delta_funding_data():
-  # Delta India Public Ticker API Endpoint
-  url = "https://api.india.delta.exchange/v2/tickers"
-  headers = {"Accept": "application/json"}
-
-  try:
-    response = requests.get(url, headers=headers, timeout=10)
+@st.cache_data(ttl=60)
+def fetch_funding_data():
+    url = "https://api.delta.exchange/v2/tickers"
+    response = requests.get(url)
     if response.status_code == 200:
-      data = response.json().get("result", [])
-      funding_list = []
+        data = response.json().get("result", [])
+        parsed_data = []
 
-      for item in data:
-        # केवल Perpetual Futures कॉन्ट्रैक्ट्स को फिल्टर करना
-        if item.get("contract_type") == "perpetual_futures":
-          symbol = item.get("symbol")
-          close_price = item.get("close", 0)
+        for item in data:
+            symbol = item.get("symbol", "")
+            if item.get("contract_type") == "perpetual_futures":
+                funding_rate = float(item.get("funding_rate", 0) or 0)
+                price = float(item.get("mark_price", 0) or 0)
+                interval_hours = item.get("funding_interval_hours", 8)
 
-          # फंडिंग रेट निष्कर्षण (100 से गुणा करके % में बदलना)
-          funding_rate = item.get("funding_rate")
-          if funding_rate is not None:
-            funding_rate_pct = float(funding_rate) * 100
-          else:
-            funding_rate_pct = 0.0
+                rate_8h = (
+                    f"{funding_rate:.4f}%" if interval_hours == 8 else "-"
+                )
+                rate_4h = (
+                    f"{funding_rate:.4f}%" if interval_hours == 4 else "-"
+                )
+                rate_1h = (
+                    f"{funding_rate:.4f}%" if interval_hours == 1 else "-"
+                )
 
-          funding_list.append({
-              "Symbol": symbol,
-              "Price": float(close_price),
-              "Funding Rate (%)": round(funding_rate_pct, 4),
-          })
+                # TradingView Link for the coin
+                tv_url = f"https://www.tradingview.com/chart/?symbol=DELTA:{symbol}"
 
-      return pd.DataFrame(funding_list)
-    else:
-      return pd.DataFrame()
-  except Exception as e:
-    st.error(f"API Error: {e}")
+                parsed_data.append(
+                    {
+                        "Coin Symbol": symbol,
+                        "Price ($)": f"${price:,.4f}",
+                        "Funding (8h)": rate_8h,
+                        "Funding (4h)": rate_4h,
+                        "Funding (1h)": rate_1h,
+                        "Chart": tv_url,
+                        "raw_rate": funding_rate,
+                    }
+                )
+
+        df = pd.DataFrame(parsed_data)
+        return df
     return pd.DataFrame()
 
 
-# रिफ्रेश बटन
-if st.button("🔄 Refresh Data"):
-  st.cache_data.clear()
-
-df = get_delta_funding_data()
+df = fetch_funding_data()
 
 if not df.empty:
-  # मोबाइल फ्रेंडली फिल्टर्स
-  col1, col2 = st.columns([1, 1])
-
-  with col1:
-    filter_type = st.selectbox(
+    filter_option = st.selectbox(
         "🎯 Filter Coins:",
         ["All Coins", "Negative Funding Only 🔴", "Positive Funding Only 🟢"],
     )
 
-  with col2:
-    sort_order = st.selectbox(
-        "📊 Sort Order:",
-        [
-            "Ascending (Lowest First)",
-            "Descending (Highest First)",
-            "Most Negative First",
-        ],
+    if filter_option == "Negative Funding Only 🔴":
+        df = df[df["raw_rate"] < 0]
+    elif filter_option == "Positive Funding Only 🟢":
+        df = df[df["raw_rate"] > 0]
+
+    # Display DataFrame with Clickable Link Column for Charts
+    st.dataframe(
+        df,
+        column_config={
+            "Coin Symbol": st.column_config.TextColumn("Coin Symbol"),
+            "Price ($)": st.column_config.TextColumn("Price ($)"),
+            "Funding (8h)": st.column_config.TextColumn("Funding (8h)"),
+            "Funding (4h)": st.column_config.TextColumn("Funding (4h)"),
+            "Funding (1h)": st.column_config.TextColumn("Funding (1h)"),
+            "Chart": st.column_config.LinkColumn(
+                "TradingView Chart",
+                help="Click to open chart",
+                display_text="📈 View Chart",
+            ),
+            "raw_rate": None,
+        },
+        use_container_width=True,
+        hide_index=True,
     )
-
-  # 1. फिल्टर लागू करना
-  if filter_type == "Negative Funding Only 🔴":
-    df_filtered = df[df["Funding Rate (%)"] < 0].copy()
-  elif filter_type == "Positive Funding Only 🟢":
-    df_filtered = df[df["Funding Rate (%)"] > 0].copy()
-  else:
-    df_filtered = df.copy()
-
-  # 2. सॉर्टिंग लागू करना
-  if (
-      sort_order == "Ascending (Lowest First)"
-      or sort_order == "Most Negative First"
-  ):
-    df_filtered = df_filtered.sort_values(
-        by="Funding Rate (%)", ascending=True
-    )
-  else:
-    df_filtered = df_filtered.sort_values(
-        by="Funding Rate (%)", ascending=False
-    )
-
-  # समरी मेट्रिक्स
-  st.caption(f"कुल मिले पर्पेटुअल कॉइन्स: **{len(df_filtered)}**")
-
-  # मोबाइल-फ्रेंडली टेबल व्यू
-  st.dataframe(
-      df_filtered,
-      column_config={
-          "Symbol": st.column_config.TextColumn("Coin Symbol"),
-          "Price": st.column_config.NumberColumn(
-              "Price ($)", format="$%.4f"
-          ),
-          "Funding Rate (%)": st.column_config.NumberColumn(
-              "Funding Rate (8h)", format="%.4f%%"
-          ),
-      },
-      use_container_width=True,
-      hide_index=True,
-  )
-
 else:
-  st.warning("डेटा लोड हो रहा है या API से संपर्क नहीं हो पा रहा है...")
+    st.error("डेटा लोड नहीं हो पाया। कृपया रिफ्रेश करें।")
