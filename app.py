@@ -27,7 +27,7 @@ if st.button("🔄 Refresh Data"):
     st.rerun()
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def fetch_funding_data():
     url = "https://api.delta.exchange/v2/tickers"
     response = requests.get(url)
@@ -38,21 +38,29 @@ def fetch_funding_data():
         for item in data:
             symbol = item.get("symbol", "")
             if item.get("contract_type") == "perpetual_futures":
-                funding_rate = float(item.get("funding_rate", 0) or 0)
+                # Delta API returns funding_rate in decimal (e.g. -0.018093 = -1.8093%)
+                raw_rate = float(item.get("funding_rate", 0) or 0)
+                rate_pct = raw_rate * 100
+
                 price = float(item.get("mark_price", 0) or 0)
-                interval_hours = item.get("funding_interval_hours", 8)
 
-                rate_8h = (
-                    f"{funding_rate:.4f}%" if interval_hours == 8 else "-"
+                # Fetch interval: converts seconds or hours to standard 8, 4, 1
+                interval = item.get("funding_interval_hours") or item.get(
+                    "funding_interval"
                 )
-                rate_4h = (
-                    f"{funding_rate:.4f}%" if interval_hours == 4 else "-"
-                )
-                rate_1h = (
-                    f"{funding_rate:.4f}%" if interval_hours == 1 else "-"
-                )
+                if interval == 28800 or interval == 8:
+                    hours = 8
+                elif interval == 14400 or interval == 4:
+                    hours = 4
+                elif interval == 3600 or interval == 1:
+                    hours = 1
+                else:
+                    hours = 8  # default fallback
 
-                # TradingView Link for the coin
+                rate_8h = f"{rate_pct:.4f}%" if hours == 8 else "-"
+                rate_4h = f"{rate_pct:.4f}%" if hours == 4 else "-"
+                rate_1h = f"{rate_pct:.4f}%" if hours == 1 else "-"
+
                 tv_url = f"https://www.tradingview.com/chart/?symbol=DELTA:{symbol}"
 
                 parsed_data.append(
@@ -63,11 +71,14 @@ def fetch_funding_data():
                         "Funding (4h)": rate_4h,
                         "Funding (1h)": rate_1h,
                         "Chart": tv_url,
-                        "raw_rate": funding_rate,
+                        "raw_rate": rate_pct,
                     }
                 )
 
         df = pd.DataFrame(parsed_data)
+        if not df.empty:
+            # Sort by most negative funding rate first (matching Delta screen)
+            df = df.sort_values(by="raw_rate", ascending=True)
         return df
     return pd.DataFrame()
 
@@ -85,7 +96,6 @@ if not df.empty:
     elif filter_option == "Positive Funding Only 🟢":
         df = df[df["raw_rate"] > 0]
 
-    # Display DataFrame with Clickable Link Column for Charts
     st.dataframe(
         df,
         column_config={
@@ -105,4 +115,4 @@ if not df.empty:
         hide_index=True,
     )
 else:
-    st.error("डेटा लोड नहीं हो पाया। कृपया रिफ्रेश करें।")
+    st.error("Data load nahi ho paya. Kripya refresh karein.")
