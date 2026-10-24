@@ -52,14 +52,14 @@ def fetch_funding_data():
                         "funding_interval_hours"
                     )
 
+                    # केवल तभी इंटरवल दिखाएं जब 4h या 1h हो, वरना सिर्फ परसेंटेज रखें
                     if interval in [14400, 4, "4h", "4"]:
-                        hours = 4
+                        funding_str = f"{rate_pct:.4f}% / 4h"
                     elif interval in [3600, 1, "1h", "1"]:
-                        hours = 1
+                        funding_str = f"{rate_pct:.4f}% / 1h"
                     else:
-                        hours = 8
+                        funding_str = f"{rate_pct:.4f}%"
 
-                    funding_str = f"{rate_pct:.4f}% / {hours}h"
                     delta_url = (
                         f"https://www.delta.exchange/app/trade/perpetual/{symbol}"
                     )
