@@ -39,7 +39,6 @@ def fetch_funding_data():
             symbol = item.get("symbol", "")
             contract_type = item.get("contract_type", "")
 
-            # सभी पर्पेचुअल कॉन्ट्रैक्ट्स को सही से फ़िल्टर करने के लिए
             if (
                 "perpetual" in contract_type.lower()
                 or "futures" in contract_type.lower()
@@ -49,7 +48,6 @@ def fetch_funding_data():
                     rate_pct = raw_rate * 100
                     price = float(item.get("mark_price", 0) or 0)
 
-                    # डेल्टा एक्सचेंज के असली इंटरवल (सेकंड्स या आवर्स) की सटीक पहचान
                     interval = item.get("funding_interval") or item.get(
                         "funding_interval_hours"
                     )
@@ -59,9 +57,8 @@ def fetch_funding_data():
                     elif interval in [3600, 1, "1h", "1"]:
                         hours = 1
                     else:
-                        hours = 8  # डिफ़ॉल्ट 8 hours
+                        hours = 8
 
-                    # डेल्टा एक्सचेंज की तरह सटीक फॉर्मेट (जैसे -1.9059% / 4h)
                     funding_str = f"{rate_pct:.4f}% / {hours}h"
                     delta_url = (
                         f"https://www.delta.exchange/app/trade/perpetual/{symbol}"
@@ -79,9 +76,7 @@ def fetch_funding_data():
 
         df = pd.DataFrame(parsed_data)
         if not df.empty:
-            # सबसे ज़्यादा नेगेटिव फंडिंग रेट सबसे ऊपर (डेल्टा एक्सचेंज की तरह ORDERUSD आदि)
             df = df.sort_values(by="raw_rate", ascending=True)
-            # डुप्लीकेट सिंबल हटाने के लिए
             df = df.drop_duplicates(subset=["Coin Symbol"])
         return df
     return pd.DataFrame()
@@ -104,7 +99,7 @@ if not df.empty:
         df[["Coin Symbol", "Price ($)", "Funding Rate", "Delta Chart"]],
         column_config={
             "Coin Symbol": st.column_config.TextColumn("Coin Symbol"),
-            "Price ($)": st.column_config.TextColumn("Price ($)": TextColumn),
+            "Price ($)": st.column_config.TextColumn("Price ($)"),
             "Funding Rate": st.column_config.TextColumn("Funding Rate"),
             "Delta Chart": st.column_config.LinkColumn(
                 "Delta Chart",
